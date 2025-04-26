@@ -1,24 +1,28 @@
-// App.tsx
+// App.tsx - Main application component for the Going Viral 2025 Project
+// This application allows users to view and report incidents on a map during emergencies
+
 import React, { useState } from 'react';
 import { Map, X, Database, Camera, Upload, Search, AlertTriangle } from 'lucide-react';
 import './App.css';
 
-// import images here, format is import nameOfImage from "path/to/image.jpg"
+// Import image assets for report illustrations
 import fefaImage from './images/fefa responds.jpeg';
 import lostKid from './images/lost kid.jpeg';
 import foundKid from './images/found kid.jpeg';
 import library from './images/library.png';
 
+// Define TypeScript interface for Report objects
 type Report = {
-  id: number;
-  name: string;
-  date: string;
-  location: string;
-  description: string;
-  imageUrl: any;
-  coordinates: [number, number];
+  id: number;         // Unique identifier for each report
+  name: string;       // Name of the person who reported the incident
+  date: string;       // Date when the incident was reported
+  location: string;   // Location description of the incident
+  description: string;// Detailed description of the incident
+  imageUrl: any;      // Image associated with the report
+  coordinates: [number, number]; // Geographical coordinates [latitude, longitude]
 };
 
+// Sample data of incident reports for demonstration
 const dummyReports: Report[] = [
   {
     id: 1,
@@ -27,7 +31,7 @@ const dummyReports: Report[] = [
     location: "Downtown Park",
     description: "FEFA is responding to downtown park so this place will probably be cleaned soon",
     imageUrl: fefaImage,
-    coordinates: [37.7749, -122.4194]
+    coordinates: [37.7749, -122.4194] // San Francisco area coordinates
   },
   {
     id: 2,
@@ -68,10 +72,13 @@ const dummyReports: Report[] = [
 ];
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'map' | 'reports'>('map');
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [showPinForm, setShowPinForm] = useState<boolean>(false);
+  // State management
+  const [activeTab, setActiveTab] = useState<'map' | 'reports'>('map'); // Track active tab (map or reports view)
+  const [searchTerm, setSearchTerm] = useState<string>(''); // Store user search input
+  const [showPinForm, setShowPinForm] = useState<boolean>(false); // Control visibility of the report form
   
+  // Filter reports based on user search term
+  // Searches through location, description and reporter name
   const filteredReports = dummyReports.filter(report => 
     report.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
     report.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -80,11 +87,13 @@ const App: React.FC = () => {
 
   return (
     <div className="app-container">
+      {/* Application header section */}
       <header className="header">
         <h1>Going Viral 2025 Project</h1>
         <p>Notify the community and first responders with this low data usage app.</p>
       </header>
 
+      {/* Navigation tabs to switch between map and reports views */}
       <nav className="tab-navigation">
         <button 
           className={`tab-button ${activeTab === 'map' ? 'active' : ''}`}
@@ -103,13 +112,16 @@ const App: React.FC = () => {
       </nav>
 
       <main className="main-content">
+        {/* Map View - Shows geographical representation of incidents */}
         {activeTab === 'map' && (
           <div className="map-container">
+            {/* Map control panel with incident reporting button and legend */}
             <div className="map-controls">
               <button className="add-pin-button" onClick={() => setShowPinForm(!showPinForm)}>
                 <AlertTriangle size={16} />
                 {showPinForm ? 'Cancel' : 'Report Incident'}
               </button>
+              {/* Map legend explaining the different pin types */}
               <div className="map-legend">
                 <span className="legend-item">
                   <span className="pin recent"></span> Recent (24h)
@@ -123,6 +135,7 @@ const App: React.FC = () => {
               </div>
             </div>
             
+            {/* Incident reporting form - shown when user clicks "Report Incident" */}
             {showPinForm && (
               <div className="add-pin-form">
                 <div className="form-header">
@@ -132,6 +145,7 @@ const App: React.FC = () => {
                   </button>
                 </div>
                 <div className="form-fields">
+                  {/* Form input fields for incident details */}
                   <div className="form-group">
                     <label>Name</label>
                     <input type="text" placeholder="Your name" />
@@ -159,11 +173,13 @@ const App: React.FC = () => {
               </div>
             )}
             
+            {/* Map visualization - currently using a placeholder instead of a real map component */}
             <div className="map-display">
-              {/* Map placeholder - would be replaced with actual map component */}
+              {/* This would be replaced with an actual map library implementation */}
               <div className="map-placeholder">
                 <div className="map-image">
                   <div className="map-grid"></div>
+                  {/* Render pins for each report with different styles based on report type */}
                   {dummyReports.map((report) => (
                     <div 
                       key={report.id}
@@ -183,10 +199,12 @@ const App: React.FC = () => {
           </div>
         )}
 
+        {/* Reports View - Lists all incident reports with search functionality */}
         {activeTab === 'reports' && (
           <div className="reports-container">
             <div className="reports-header">
               <h2>Recent Reports</h2>
+              {/* Search input for filtering reports */}
               <div className="search-container">
                 <Search size={18} />
                 <input 
@@ -198,13 +216,16 @@ const App: React.FC = () => {
               </div>
             </div>
             
+            {/* List of filtered reports */}
             <div className="reports-list">
               {filteredReports.length > 0 ? (
                 filteredReports.map((report) => (
                   <div key={report.id} className="report-card">
+                    {/* Report image */}
                     <div className="report-image">
                       <img src={report.imageUrl} alt={`Report by ${report.name}`} />
                     </div>
+                    {/* Report content and details */}
                     <div className="report-details">
                       <div className="report-header">
                         <h3>{report.location}</h3>
@@ -219,6 +240,7 @@ const App: React.FC = () => {
                   </div>
                 ))
               ) : (
+                // Displayed when no reports match the search criteria
                 <div className="no-results">
                   <p>No reports found matching your search</p>
                 </div>
@@ -228,6 +250,7 @@ const App: React.FC = () => {
         )}
       </main>
 
+      {/* Application footer with copyright and links */}
       <footer className="footer">
         <p>&copy; 2025 Incident Tracker. All rights reserved.</p>
         <div className="footer-links">
