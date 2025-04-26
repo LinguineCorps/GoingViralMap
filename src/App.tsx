@@ -222,6 +222,13 @@ const handleSubmitReport = () => {
                     <label>Upload Image</label>
                     <div className="upload-area">
                       <label htmlFor="file-upload" className="upload-label">
+                      {reportImage ? (
+                        <img 
+                          src={URL.createObjectURL(reportImage)} 
+                          alt="Preview" 
+                          className="preview-image" 
+                        />
+                      ) : null}
                         <Upload size={24} />
                         <span>Click or drag files</span>
                       </label>
