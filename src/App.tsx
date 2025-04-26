@@ -140,7 +140,7 @@ const handleSubmitReport = () => {
     <div className="app-container">
       {/* Application header section */}
       <header className="header">
-        <h1>Going Viral 2025 Project</h1>
+        <h1>Going Viral 2025 Crisis Map</h1>
         <p>Notify the community and first responders with this low data usage app.</p>
       </header>
 
