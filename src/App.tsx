@@ -76,6 +76,12 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'map' | 'reports'>('map'); // Track active tab (map or reports view)
   const [searchTerm, setSearchTerm] = useState<string>(''); // Store user search input
   const [showPinForm, setShowPinForm] = useState<boolean>(false); // Control visibility of the report form
+
+  // Report state variables for the incident reporting form
+  const [reportName, setReportName] = useState<string>('');
+  const [reportLocation, setReportLocation] = useState<string>('');
+  const [reportDescription, setReportDescription] = useState<string>('');
+  const [reportImage, setReportImage] = useState<File | null>(null);
   
   // Filter reports based on user search term
   // Searches through location, description and reporter name
@@ -84,6 +90,46 @@ const App: React.FC = () => {
     report.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
     report.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Add this function inside your App component
+const handleSubmitReport = () => {
+  // Create a new report object
+  const newReport: Omit<Report, 'id' | 'date' | 'imageUrl' | 'coordinates'> = {
+    name: reportName,
+    location: reportLocation,
+    description: reportDescription,
+  };
+
+  // Log the report (for now - would send to server in real app)
+  console.log('Submitting new report:', newReport);
+  
+  // Optional: Add to local state (would be fetched from server in real app)
+  // const updatedReports = [...dummyReports, {
+  //   ...newReport,
+  //   id: dummyReports.length + 1,
+  //   date: new Date().toISOString().split('T')[0],
+  //   imageUrl: reportImage ? URL.createObjectURL(reportImage) : {},
+  //   coordinates: [37.7749, -122.4194], // Default coordinates
+  // }];
+  
+  // Clear the form
+  setReportName('');
+  setReportLocation('');
+  setReportDescription('');
+  setReportImage(null);
+  
+  // Close the form
+  setShowPinForm(false);
+  
+  // Show success message (optional)
+  alert(
+    "Report Submitted:\n" +
+    "Name: " + reportName + "\n" + 
+    "Location: " + reportLocation + "\n" + 
+    "Description: " + reportDescription + "\n" + 
+    "Image: " + (reportImage ? reportImage.name : "None")
+  );
+};
 
   return (
     <div className="app-container">
@@ -148,25 +194,51 @@ const App: React.FC = () => {
                   {/* Form input fields for incident details */}
                   <div className="form-group">
                     <label>Name</label>
-                    <input type="text" placeholder="Your name" />
+                    <input 
+                    type="text" 
+                    placeholder="Your name" 
+                    value={reportName}
+                    onChange={(e) => setReportName(e.target.value)}
+                    />
                   </div>
                   <div className="form-group">
                     <label>Location</label>
-                    <input type="text" placeholder="Incident location" />
+                    <input 
+                    type="text" 
+                    placeholder="Incident location" 
+                    value={reportLocation}
+                    onChange={(e) => setReportLocation(e.target.value)}
+                    />
                   </div>
                   <div className="form-group">
                     <label>Description</label>
-                    <textarea placeholder="Describe what you observed"></textarea>
+                    <textarea 
+                    placeholder="Describe what you observed"
+                    value={reportDescription}
+                    onChange={(e) => setReportDescription(e.target.value)}
+                    ></textarea>
                   </div>
                   <div className="form-group">
                     <label>Upload Image</label>
                     <div className="upload-area">
-                      <Upload size={24} />
-                      <span>Click or drag files</span>
+                      <label htmlFor="file-upload" className="upload-label">
+                        <Upload size={24} />
+                        <span>Click or drag files</span>
+                      </label>
+                      <input 
+                        id="file-upload" 
+                        type="file" 
+                        accept="image/*" 
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          setReportImage(file);
+                        }}
+                      />
                     </div>
                   </div>
                   <div className="form-actions">
-                    <button className="submit-button">Submit Report</button>
+                    <button className="submit-button" onClick={() => handleSubmitReport()}>Submit Report</button>
                     <button className="cancel-button" onClick={() => setShowPinForm(false)}>Cancel</button>
                   </div>
                 </div>
