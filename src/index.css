@@ -540,7 +540,7 @@ a {
   gap: 0.5rem;
 }
 
-.reporter-name {
+.reporter-name,.report-coordinates,.report-maps-link {
   font-size: 0.875rem;
   color: var(--text-secondary);
 }

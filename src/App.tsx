@@ -31,7 +31,7 @@ const dummyReports: Report[] = [
     location: "Downtown Park",
     description: "FEFA is responding to downtown park so this place will probably be cleaned soon",
     imageUrl: fefaImage,
-    coordinates: [37.7749, -122.4194] // San Francisco area coordinates
+    coordinates: [37.7749, -122.4194], // San Francisco area coordinates
   },
   {
     id: 2,
@@ -40,7 +40,7 @@ const dummyReports: Report[] = [
     location: "Huge Statue at Town Square",
     description: "Found some dudes kid over here, looks injured and name is Benny Creasell",
     imageUrl: foundKid,
-    coordinates: [37.7739, -122.4312]
+    coordinates: [37.7739, -122.4312],
   },
   {
     id: 3,
@@ -49,7 +49,7 @@ const dummyReports: Report[] = [
     location: "Central Library",
     description: "Library is leaking gas cause of the tornado that hit, emergency services are too overwhelmed to come respond, dont come near here",
     imageUrl: library,
-    coordinates: [37.7833, -122.4167]
+    coordinates: [37.7833, -122.4167],
   },
   {
     id: 4,
@@ -90,6 +90,11 @@ const App: React.FC = () => {
     report.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
     report.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Add this helper function near the top of your file
+  const getGoogleMapsURL = (coordinates: [number, number]): string => {
+    return `https://www.google.com/maps/dir//${coordinates[0]},${coordinates[1]}/@${coordinates[0]},${coordinates[1]}`;
+  };
 
   // Add this function inside your App component
 const handleSubmitReport = () => {
@@ -313,6 +318,8 @@ const handleSubmitReport = () => {
                       <p className="report-description">{report.description}</p>
                       <div className="report-footer">
                         <span className="reporter-name">Reported by: {report.name}</span>
+                        <span className="report-coordinates">Coordinates: <strong>{report.coordinates[0]}, {report.coordinates[1]}</strong></span>
+                        <span className="report-maps-link">Google Maps link: <a href={getGoogleMapsURL(report.coordinates)} target="_blank" rel="noopener noreferrer">View</a></span>
                         <button className="view-details-button">View Details</button>
                       </div>
                     </div>
