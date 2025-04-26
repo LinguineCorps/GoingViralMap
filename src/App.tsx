@@ -320,7 +320,7 @@ const handleSubmitReport = () => {
                         <span className="reporter-name">Reported by: {report.name}</span>
                         <span className="report-coordinates">Coordinates: <strong>{report.coordinates[0]}, {report.coordinates[1]}</strong></span>
                         <span className="report-maps-link">Google Maps link: <a href={getGoogleMapsURL(report.coordinates)} target="_blank" rel="noopener noreferrer">View</a></span>
-                        <button className="view-details-button">View Details</button>
+                        {/* <button className="view-details-button">View Details</button> */}
                       </div>
                     </div>
                   </div>
