@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AlertTriangle, X, Upload, Search, Database, Map as MapIcon } from 'lucide-react';
 
+// Import image assets for report illustrations
+import fefaImage from './images/fefa responds.jpeg';
+import lostKid from './images/lost kid.jpeg';
+import foundKid from './images/found kid.jpeg';
+import library from './images/library.png';
+
 // StaticMap component to replace the Leaflet implementation
 type Report = {
   id: number;
@@ -224,7 +230,7 @@ const App = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showPinForm, setShowPinForm] = useState(false);
   
-  // Sample data of incident reports (reused from original)
+  // Sample data of incident reports with images added back
   const initialReports: Report[] = [
     {
       id: 1,
@@ -233,7 +239,8 @@ const App = () => {
       location: "Downtown Park",
       description: "FEFA is responding to downtown park so this place will probably be cleaned soon",
       coordinates: [37.7749, -122.4194],
-      type: 'recent'
+      type: 'recent',
+      imageUrl: fefaImage
     },
     {
       id: 2,
@@ -242,7 +249,8 @@ const App = () => {
       location: "Huge Statue at Town Square",
       description: "Found some dudes kid over here, looks injured and name is Benny Creasell",
       coordinates: [37.7739, -122.4312],
-      type: 'standard'
+      type: 'standard',
+      imageUrl: foundKid
     },
     {
       id: 3,
@@ -251,7 +259,8 @@ const App = () => {
       location: "Central Library",
       description: "Library is leaking gas cause of the tornado that hit, emergency services are too overwhelmed to come respond, dont come near here",
       coordinates: [37.7833, -122.4167],
-      type: 'standard'
+      type: 'standard',
+      imageUrl: library
     },
     {
       id: 4,
@@ -260,7 +269,8 @@ const App = () => {
       location: "Riverside Trail, Beautiful Mansion (Super Expensive)",
       description: "My roof is torn off!!!! ",
       coordinates: [37.7694, -122.4862],
-      type: 'standard'
+      type: 'standard',
+      imageUrl: {}
     },
     {
       id: 5,
@@ -269,7 +279,8 @@ const App = () => {
       location: "North Side Neighborhood",
       description: "My kid IS LOST, his name is Benny Creasell, I can't find him after the huge landslide please help my poorly named son",
       coordinates: [37.8044, -122.4411],
-      type: 'verified'
+      type: 'verified',
+      imageUrl: lostKid
     }
   ];
   
@@ -503,8 +514,11 @@ const App = () => {
                 filteredReports.map((report) => (
                   <div key={report.id} className="report-card">
                     <div className="report-image">
-                      {typeof report.imageUrl === 'string' && report.imageUrl.length > 0 && (
-                        <img src={report.imageUrl} alt={`Report by ${report.name}`} />
+                      {/* Updated check for report image to handle both string and imported image references */}
+                      {report.imageUrl && (
+                        typeof report.imageUrl === 'string' ? 
+                          report.imageUrl.length > 0 && <img src={report.imageUrl} alt={`Report by ${report.name}`} /> :
+                          Object.keys(report.imageUrl).length > 0 && <img src={report.imageUrl as unknown as string} alt={`Report by ${report.name}`} />
                       )}
                     </div>
                     <div className="report-details">
