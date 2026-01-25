@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { AlertTriangle, X, Upload, Search, Database, Map as MapIcon } from 'lucide-react';
 import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-
+ 
 // Import image assets for report illustrations
 import fefaImage from './images/fefa responds.jpeg';
 import lostKid from './images/lost kid.jpeg';
@@ -87,14 +87,17 @@ const App = () => {
   const [reports, setReports] = useState(initialReports);
   const [selectedLocation, setSelectedLocation] = useState<[number, number] | null>(null);
 
+  // ...existing code...
+
   // Leaflet map ref and initialization
   const mapRef = useRef<L.Map | null>(null);
+  const markersRef = useRef<L.Marker[]>([]);
 
   // Initialize Leaflet map once the component mounts
   useEffect(() => {
     if (mapRef.current) return;
     try {
-      mapRef.current = L.map('map').setView([51.505, -0.09], 13);
+      mapRef.current = L.map('map').setView([37.7749, -122.4194], 12); // Centered on San Francisco where your reports are
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(mapRef.current);
@@ -106,7 +109,41 @@ const App = () => {
     } catch (err) {
       console.error('Leaflet initialization failed:', err);
     }
-  }, []);
+
+    // Cleanup function - runs when component unmounts or tab changes
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+      markersRef.current = [];
+    };
+  }, [activeTab]); // Re-run when activeTab changes
+
+  // Add markers for reports whenever reports change
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    // Clear existing markers
+    markersRef.current.forEach(marker => marker.remove());
+    markersRef.current = [];
+
+    // Add a marker for each report
+    reports.forEach(report => {
+      const marker = L.marker(report.coordinates)
+        .addTo(mapRef.current!)
+        .bindPopup(`
+          <strong>${report.location}</strong><br/>
+          ${report.description}<br/>
+          <img src="${typeof report.imageUrl === 'string' ? report.imageUrl : ''}" alt="Report Image" style="width:100px;height:auto;"/><br/>
+          <a href="https://www.google.com/maps/dir//${report.coordinates[0]},${report.coordinates[1]}/@${report.coordinates[0]},${report.coordinates[1]}" target="_blank">View on Google Maps</a><br/>
+          <em>Reported by: ${report.name}</em>
+        `);
+      markersRef.current.push(marker);
+    });
+  }, [reports, activeTab]);
+
+// ...existing code...
 
   // Report state variables for the form
   const [reportName, setReportName] = useState('');
@@ -160,12 +197,6 @@ const App = () => {
       <header className="header">
         <h1>Going Viral 2025 Crisis Map</h1>
         <p>Notify the community and first responders with this low data usage app.</p>
-         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-     crossOrigin=""/>
-     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-     crossOrigin=""></script> 
       </header>
 
       {/* Navigation tabs */}
@@ -311,12 +342,7 @@ const App = () => {
             {/* Map display - Leaflet will be implemented here */}
             <div className="map-display">
               {/* TODO: Implement Leaflet map component */}
-               <div id="map" style={{width: "600px", height: "400px", position: "relative", outlineStyle: "none"}}>
-                <p>Leaflet map will be implemented here</p>
-                <p>Reports to display: {reports.length}</p>
-                {selectedLocation && (
-                  <p>Selected: {selectedLocation[0].toFixed(4)}, {selectedLocation[1].toFixed(4)}</p>
-                )}
+               <div id="map" style={{width: "100%", height: "400px", position: "relative", outlineStyle: "none"}}>
               </div>
             </div>
           </div>
