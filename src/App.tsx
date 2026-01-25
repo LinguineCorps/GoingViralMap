@@ -104,6 +104,7 @@ const App = () => {
 
       // Click handler to select location from the map
       mapRef.current.on('click', (e: L.LeafletMouseEvent) => {
+        setShowPinForm(true);
         setSelectedLocation([e.latlng.lat, e.latlng.lng]);
       });
     } catch (err) {
@@ -119,6 +120,8 @@ const App = () => {
       markersRef.current = [];
     };
   }, [activeTab]); // Re-run when activeTab changes
+
+  
 
   // Add markers for reports whenever reports change
   useEffect(() => {
@@ -143,7 +146,7 @@ const App = () => {
     });
   }, [reports, activeTab]);
 
-// ...existing code...
+  
 
   // Report state variables for the form
   const [reportName, setReportName] = useState('');
@@ -243,7 +246,7 @@ const App = () => {
             
             {/* Incident reporting form */}
             {showPinForm && (
-              <div className="add-pin-form">
+              <div className="add-pin-form" style={{ zIndex: 1000 }}>
                 <div className="form-header">
                   <h3>Report New Incident</h3>
                   <button className="close-button" onClick={() => {
