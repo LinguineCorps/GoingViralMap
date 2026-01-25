@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AlertTriangle, X, Upload, Search, Database, Map as MapIcon } from 'lucide-react';
+import * as L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 // Import image assets for report illustrations
 import fefaImage from './images/fefa responds.jpeg';
@@ -7,7 +9,9 @@ import lostKid from './images/lost kid.jpeg';
 import foundKid from './images/found kid.jpeg';
 import library from './images/library.png';
 
-// StaticMap component to replace the Leaflet implementation
+// Leaflet map will be initialized inside the App component using a ref and useEffect
+
+// Report type definition
 type Report = {
   id: number;
   name: string;
@@ -19,211 +23,7 @@ type Report = {
   imageUrl?: string | object;
 };
 
-interface StaticMapProps {
-  reports: Report[];
-  selectedLocation: [number, number] | null;
-  setSelectedLocation: (loc: [number, number]) => void;
-  setShowPinForm: (show: boolean) => void;
-}
-
-const StaticMap: React.FC<StaticMapProps> = ({ 
-  reports, 
-  selectedLocation, 
-  setSelectedLocation, 
-  setShowPinForm 
-}) => {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const [mapDimensions, setMapDimensions] = useState({ width: 0, height: 0 });
-  
-  // Base coordinates for San Francisco area (same as in original code)
-  const baseCoordinates = {
-    lat: 37.7749,
-    lng: -122.4194,
-    minLat: 37.76,
-    maxLat: 37.81,
-    minLng: -122.49,
-    maxLng: -122.39
-  };
-  
-  // Update map dimensions on window resize
-  useEffect(() => {
-    const updateDimensions = () => {
-      if (mapRef.current) {
-        setMapDimensions({
-          width: mapRef.current.offsetWidth,
-          height: mapRef.current.offsetHeight
-        });
-      }
-    };
-    
-    updateDimensions();
-    window.addEventListener('resize', updateDimensions);
-    
-    return () => {
-      window.removeEventListener('resize', updateDimensions);
-    };
-  }, []);
-  
-  // Convert geographic coordinates to pixel position on the map
-  const coordsToPixels = (lat: number, lng: number) => {
-    const { minLat, maxLat, minLng, maxLng } = baseCoordinates;
-    const x = ((lng - minLng) / (maxLng - minLng)) * mapDimensions.width;
-    const y = ((maxLat - lat) / (maxLat - minLat)) * mapDimensions.height;
-    return { x, y };
-  };
-  
-  // Convert pixel position to geographic coordinates
-  interface PixelsToCoords {
-    (x: number, y: number): [number, number];
-  }
-
-  const pixelsToCoords: PixelsToCoords = (x, y) => {
-    const { minLat, maxLat, minLng, maxLng } = baseCoordinates;
-    const lat = maxLat - (y / mapDimensions.height) * (maxLat - minLat);
-    const lng = minLng + (x / mapDimensions.width) * (maxLng - minLng);
-    return [lat, lng];
-  };
-  
-  // Handle map click events
-  const handleMapClick = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
-    if (!mapRef.current) return;
-    const rect = mapRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    // Ensure click is within map bounds
-    if (x >= 0 && x <= mapDimensions.width && y >= 0 && y <= mapDimensions.height) {
-      const [lat, lng] = pixelsToCoords(x, y);
-      setSelectedLocation([lat, lng]);
-      setShowPinForm(true);
-    }
-  };
-  
-  // Color mapping for different report types
-  interface MarkerTypeColorMap {
-    [key: string]: string;
-  }
-
-  type MarkerType = 'recent' | 'verified' | 'standard' | string;
-
-  const getMarkerColor = (type: MarkerType): string => {
-    const colorMap: MarkerTypeColorMap = {
-      recent: '#ef4444',    // red
-      verified: '#10b981',  // green
-      standard: '#3b82f6',  // blue
-    };
-    return colorMap[type] || colorMap['standard'];
-  };
-
-  // Render pin tooltips
-  const [activePin, setActivePin] = useState<number | null>(null);
-  
-  return (
-    <div 
-      ref={mapRef} 
-      className="map-image"
-      onClick={handleMapClick}
-      style={{ position: 'relative', height: '500px' }}
-    >
-      {/* Map background with grid overlay */}
-      <div className="map-grid"></div>
-      
-      {/* Display pins for each report */}
-      {reports.map((report) => {
-        const { x, y } = coordsToPixels(report.coordinates[0], report.coordinates[1]);
-        if (x >= 0 && x <= mapDimensions.width && y >= 0 && y <= mapDimensions.height) {
-          return (
-            <div key={report.id}>
-              <div 
-                className={`map-pin ${report.type || 'standard'}`}
-                style={{
-                  left: `${x}px`,
-                  top: `${y}px`,
-                  backgroundColor: getMarkerColor(report.type || 'standard')
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActivePin(activePin === report.id ? null : report.id);
-                }}
-              />
-              
-              {activePin === report.id && (
-                <div 
-                  className="pin-tooltip"
-                  style={{
-                    position: 'absolute',
-                    left: `${x + 15}px`,
-                    top: `${y - 20}px`,
-                    backgroundColor: 'white',
-                    padding: '8px 12px',
-                    borderRadius: '4px',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                    zIndex: 100,
-                    minWidth: '200px',
-                    maxWidth: '300px'
-                  }}
-                >
-                  <h4 className="font-medium text-base mb-1">{report.location}</h4>
-                  <p className="text-sm text-gray-600 mb-2">{report.description}</p>
-                  <div className="text-xs text-gray-500 flex flex-col gap-1">
-                    <span>Reported by: {report.name}</span>
-                    <span>Date: {report.date}</span>
-                    <button 
-                      className="text-blue-500 hover:underline text-xs text-left mt-1"
-                      onClick={() => {
-                        // Create Google Maps URL (same as original function)
-                        const url = `https://www.google.com/maps/dir//${report.coordinates[0]},${report.coordinates[1]}/@${report.coordinates[0]},${report.coordinates[1]}`;
-                        window.open(url, '_blank');
-                      }}
-                    >
-                      Get Directions
-                    </button>
-                  </div>
-                  <button 
-                    className="absolute top-1 right-1 text-gray-500 hover:text-gray-700"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActivePin(null);
-                    }}
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        }
-        return null;
-      })}
-      
-      {/* Display selected location pin if any */}
-      {selectedLocation && (() => {
-        const { x, y } = coordsToPixels(selectedLocation[0], selectedLocation[1]);
-        if (x >= 0 && x <= mapDimensions.width && y >= 0 && y <= mapDimensions.height) {
-          return (
-            <div 
-              className="map-pin recent"
-              style={{
-                left: `${x}px`,
-                top: `${y}px`,
-                backgroundColor: '#ef4444',
-                border: '2px solid white'
-              }}
-            />
-          );
-        }
-        return null;
-      })()}
-      
-      {/* Map instructions overlay */}
-      <div className="map-instructions">
-        Click anywhere on the map to add a new incident report
-      </div>
-    </div>
-  );
-};
-
-// The main App component that integrates the static map
+// The main App component
 const App = () => {
   // State management (same as original)
   const [activeTab, setActiveTab] = useState('map');
@@ -287,6 +87,27 @@ const App = () => {
   const [reports, setReports] = useState(initialReports);
   const [selectedLocation, setSelectedLocation] = useState<[number, number] | null>(null);
 
+  // Leaflet map ref and initialization
+  const mapRef = useRef<L.Map | null>(null);
+
+  // Initialize Leaflet map once the component mounts
+  useEffect(() => {
+    if (mapRef.current) return;
+    try {
+      mapRef.current = L.map('map').setView([51.505, -0.09], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(mapRef.current);
+
+      // Click handler to select location from the map
+      mapRef.current.on('click', (e: L.LeafletMouseEvent) => {
+        setSelectedLocation([e.latlng.lat, e.latlng.lng]);
+      });
+    } catch (err) {
+      console.error('Leaflet initialization failed:', err);
+    }
+  }, []);
+
   // Report state variables for the form
   const [reportName, setReportName] = useState('');
   const [reportLocation, setReportLocation] = useState('');
@@ -339,6 +160,12 @@ const App = () => {
       <header className="header">
         <h1>Going Viral 2025 Crisis Map</h1>
         <p>Notify the community and first responders with this low data usage app.</p>
+         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     crossOrigin=""/>
+     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+     crossOrigin=""></script> 
       </header>
 
       {/* Navigation tabs */}
@@ -481,14 +308,16 @@ const App = () => {
               </div>
             )}
             
-            {/* Static map display replacing Leaflet */}
+            {/* Map display - Leaflet will be implemented here */}
             <div className="map-display">
-              <StaticMap 
-                reports={reports}
-                selectedLocation={selectedLocation}
-                setSelectedLocation={setSelectedLocation}
-                setShowPinForm={setShowPinForm}
-              />
+              {/* TODO: Implement Leaflet map component */}
+               <div id="map" style={{width: "600px", height: "400px", position: "relative", outlineStyle: "none"}}>
+                <p>Leaflet map will be implemented here</p>
+                <p>Reports to display: {reports.length}</p>
+                {selectedLocation && (
+                  <p>Selected: {selectedLocation[0].toFixed(4)}, {selectedLocation[1].toFixed(4)}</p>
+                )}
+              </div>
             </div>
           </div>
         )}
