@@ -144,6 +144,44 @@
   font-weight: 500;
 }
 
+/* Simulation Legend Styles */
+.map-legend-sim {
+  display: flex;
+  gap: 20px;
+  padding: 8px 15px;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 13px;
+}
+
+.legend-item-sim {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.marker-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  flex-shrink: 0;
+}
+
+.marker-dot.red {
+  background-color: red;
+}
+
+.marker-dot.green {
+  background-color: green;
+}
+
+.marker-dot.blue {
+  background-color: blue;
+}
+
 .results-section {
   background: white;
   border-radius: 8px;

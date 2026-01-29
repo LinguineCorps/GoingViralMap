@@ -482,6 +482,17 @@ const Simulation = () => {
             <span>Canceled: {callStats.canceled}</span>
             <span>Self-Completed: {callStats.selfCompleted}</span>
           </div>
+          <div style={{ display: 'flex', gap: '20px', padding: '8px 15px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', fontSize: '13px' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'red', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}></span> Pending Emergency
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'green', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}></span> Completed Emergency
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'blue', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}></span> First Responder
+            </span>
+          </div>
           <div id="call-map" style={{ width: '100%', height: '300px' }}></div>
         </div>
 
@@ -492,6 +503,17 @@ const Simulation = () => {
             <span>Completed: {reportStats.completed}</span>
             <span>Canceled: {reportStats.canceled}</span>
             <span>Self-Completed: {reportStats.selfCompleted}</span>
+          </div>
+          <div style={{ display: 'flex', gap: '20px', padding: '8px 15px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', fontSize: '13px' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'red', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}></span> Pending Emergency
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'green', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}></span> Completed Emergency
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'blue', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}></span> First Responder
+            </span>
           </div>
           <div id="report-map" style={{ width: '100%', height: '300px' }}></div>
         </div>
