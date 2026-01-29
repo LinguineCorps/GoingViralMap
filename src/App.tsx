@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { AlertTriangle, X, Upload, Search, Database, Map as MapIcon } from 'lucide-react';
+import { AlertTriangle, X, Upload, Search, Database, Map as MapIcon, FlaskConical } from 'lucide-react';
 import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import Simulation from './components/Simulation';
  
 // Import image assets for report illustrations
 import fefaImage from './images/fefa responds.jpeg';
@@ -218,6 +219,13 @@ const App = () => {
           <Database size={18} />
           Recent Reports
         </button>
+        <button 
+          className={`tab-button ${activeTab === 'simulation' ? 'active' : ''}`}
+          onClick={() => setActiveTab('simulation')}
+        >
+          <FlaskConical size={18} />
+          Experiment
+        </button>
       </nav>
 
       <main className="main-content">
@@ -408,6 +416,11 @@ const App = () => {
               )}
             </div>
           </div>
+        )}
+
+        {/* Experiment Simulation View */}
+        {activeTab === 'simulation' && (
+          <Simulation />
         )}
       </main>
 
