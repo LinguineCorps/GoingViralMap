@@ -9,13 +9,14 @@ type Emergency = {
   status: 'pending' | 'assigned' | 'completed' | 'canceled';
   assignedResponder?: number;
   waitTime: number;
+  gridCell?: string;
 };
 
 type FirstResponder = {
   id: number;
   coordinates: [number, number];
-  busy: boolean;
   busyUntil: number;
+  gridCell: string;
 };
 
 type SimulationResult = {
@@ -28,6 +29,8 @@ type SimulationResult = {
   totalCompleted: number;
 };
 
+type SpatialGrid = Map<string, number[]>;
+
 const HOUSTON_CENTER: [number, number] = [29.7604, -95.3698];
 const HOUSTON_BOUNDS = {
   latMin: 29.5,
@@ -39,22 +42,36 @@ const HOUSTON_BOUNDS = {
 // Constants from experiment
 const BASE_CALLS = 75000;
 const SIMULATION_HOURS = 48;
-const OPERATORS_COUNT = 50;
-const RESPONDERS_COUNT = 100;
+const CALL_OPERATORS_COUNT = 500; // Operators answering phones
+const RESPONDERS_COUNT = 17650; // First responders on the ground
+
+// Spatial grid settings
+const GRID_SIZE = 0.02; // ~2km cells for efficient lookups
+const SELF_COMPLETE_CHECK_INTERVAL = 60; // Check every simulated minute
 
 // Time estimates (in simulation seconds)
-const CALL_PROCESS_TIME = { min: 120, max: 300 }; // 2-5 minutes
-const REPORT_PROCESS_TIME = { min: 30, max: 90 }; // 30-90 seconds
+const CALL_PROCESS_TIME = { min: 120, max: 300 }; // 2-5 minutes for operator to handle call
+const REPORT_PROCESS_TIME = { min: 30, max: 90 }; // 30-90 seconds for responder to read report
 const HANGUP_THRESHOLD = 300; // 5 minutes wait before chance to hang up
 const HANGUP_CHANCE = 0.1; // 10% chance per check after threshold
+
+// Call simulation: responders stumble upon emergencies, very low chance
+const CALL_SELF_COMPLETE = { 
+  closeRange: 1,     // km - must be very close
+  closeChance: 0.02  // 2% chance per minute - rare coincidence
+};
+
+// Report simulation: max range responders will travel to pick up an emergency
+const REPORT_MAX_RANGE = 10; // km
 
 const Simulation = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [speed, setSpeed] = useState(100); // 100x speed by default
-  const [simTime, setSimTime] = useState(0); // Simulation time in seconds
+  const [speed, setSpeed] = useState(100);
+  const [simTime, setSimTime] = useState(0);
   const [results, setResults] = useState<SimulationResult[]>([]);
   const [currentTrial, setCurrentTrial] = useState(0);
+  const [lastSelfCompleteCheck, setLastSelfCompleteCheck] = useState(0);
 
   // Simulation state
   const [callEmergencies, setCallEmergencies] = useState<Emergency[]>([]);
@@ -64,21 +81,55 @@ const Simulation = () => {
   const [callStats, setCallStats] = useState({ completed: 0, canceled: 0, selfCompleted: 0, totalTime: 0 });
   const [reportStats, setReportStats] = useState({ completed: 0, canceled: 0, selfCompleted: 0, totalTime: 0 });
   const [callQueue, setCallQueue] = useState<Emergency[]>([]);
-  const [reportQueue, setReportQueue] = useState<Emergency[]>([]);
-  const [callOperatorsBusy, setCallOperatorsBusy] = useState<number[]>(Array(OPERATORS_COUNT).fill(0));
-  const [reportOperatorsBusy, setReportOperatorsBusy] = useState<number[]>(Array(OPERATORS_COUNT).fill(0));
+  const [callOperatorsBusy, setCallOperatorsBusy] = useState<number[]>(Array(CALL_OPERATORS_COUNT).fill(0));
+
+  // Spatial grids for efficient lookups
+  const callResponderGridRef = useRef<SpatialGrid>(new Map());
+  const reportResponderGridRef = useRef<SpatialGrid>(new Map());
 
   // Map refs
   const callMapRef = useRef<L.Map | null>(null);
   const reportMapRef = useRef<L.Map | null>(null);
-  const callMarkersRef = useRef<L.Marker[]>([]);
-  const reportMarkersRef = useRef<L.Marker[]>([]);
-  const callResponderMarkersRef = useRef<L.Marker[]>([]);
-  const reportResponderMarkersRef = useRef<L.Marker[]>([]);
+  const callMarkersRef = useRef<L.CircleMarker[]>([]);
+  const reportMarkersRef = useRef<L.CircleMarker[]>([]);
+  const callResponderMarkersRef = useRef<L.CircleMarker[]>([]);
+  const reportResponderMarkersRef = useRef<L.CircleMarker[]>([]);
+
+  // Get grid cell for coordinates
+  const getGridCell = useCallback((coords: [number, number]): string => {
+    const latCell = Math.floor(coords[0] / GRID_SIZE);
+    const lngCell = Math.floor(coords[1] / GRID_SIZE);
+    return `${latCell},${lngCell}`;
+  }, []);
+
+  // Get adjacent grid cells (for proximity search)
+  const getAdjacentCells = useCallback((cell: string, radius: number = 3): string[] => {
+    const [lat, lng] = cell.split(',').map(Number);
+    const cells: string[] = [];
+    for (let dLat = -radius; dLat <= radius; dLat++) {
+      for (let dLng = -radius; dLng <= radius; dLng++) {
+        cells.push(`${lat + dLat},${lng + dLng}`);
+      }
+    }
+    return cells;
+  }, []);
+
+  // Build spatial grid from responders
+  const buildSpatialGrid = useCallback((responders: FirstResponder[]): SpatialGrid => {
+    const grid: SpatialGrid = new Map();
+    responders.forEach(r => {
+      const cell = r.gridCell;
+      if (!grid.has(cell)) {
+        grid.set(cell, []);
+      }
+      grid.get(cell)!.push(r.id);
+    });
+    return grid;
+  }, []);
 
   // Calculate hourly call rate with randomness
   const getHourlyCallRate = useCallback(() => {
-    const additionalCalls = Math.floor(Math.random() * 10000) + 5000; // 5000-15000
+    const additionalCalls = Math.floor(Math.random() * 10000) + 5000;
     const totalCalls = BASE_CALLS + additionalCalls;
     const baseRate = totalCalls / SIMULATION_HOURS;
     const variance = additionalCalls / SIMULATION_HOURS;
@@ -92,9 +143,9 @@ const Simulation = () => {
     return [lat, lng];
   }, []);
 
-  // Calculate distance between two points
-  const getDistance = (coord1: [number, number], coord2: [number, number]): number => {
-    const R = 6371; // Earth's radius in km
+  // Calculate distance between two points (Haversine formula)
+  const getDistance = useCallback((coord1: [number, number], coord2: [number, number]): number => {
+    const R = 6371;
     const dLat = (coord2[0] - coord1[0]) * Math.PI / 180;
     const dLon = (coord2[1] - coord1[1]) * Math.PI / 180;
     const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
@@ -102,21 +153,49 @@ const Simulation = () => {
               Math.sin(dLon/2) * Math.sin(dLon/2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     return R * c;
-  };
+  }, []);
 
-  // Initialize responders
+  // Find nearby available responders for self-completion
+  const findNearbyResponders = useCallback((
+    emergency: Emergency,
+    responders: FirstResponder[],
+    grid: SpatialGrid,
+    maxDistance: number,
+    currentTime: number
+  ): FirstResponder[] => {
+    const emergencyCell = getGridCell(emergency.coordinates);
+    const radiusCells = Math.ceil(maxDistance / (GRID_SIZE * 111)); // Convert km to grid cells
+    const adjacentCells = getAdjacentCells(emergencyCell, radiusCells);
+    
+    const nearbyIds = new Set<number>();
+    adjacentCells.forEach(cell => {
+      const ids = grid.get(cell);
+      if (ids) {
+        ids.forEach(id => nearbyIds.add(id));
+      }
+    });
+
+    return responders.filter(r => 
+      nearbyIds.has(r.id) && 
+      r.busyUntil <= currentTime && 
+      getDistance(emergency.coordinates, r.coordinates) <= maxDistance
+    );
+  }, [getGridCell, getAdjacentCells, getDistance]);
+
+  // Initialize responders with grid cells
   const initializeResponders = useCallback(() => {
     const responders: FirstResponder[] = [];
     for (let i = 0; i < RESPONDERS_COUNT; i++) {
+      const coords = getRandomCoordinates();
       responders.push({
         id: i,
-        coordinates: getRandomCoordinates(),
-        busy: false,
-        busyUntil: 0
+        coordinates: coords,
+        busyUntil: 0,
+        gridCell: getGridCell(coords)
       });
     }
     return responders;
-  }, [getRandomCoordinates]);
+  }, [getRandomCoordinates, getGridCell]);
 
   // Initialize maps
   useEffect(() => {
@@ -146,82 +225,119 @@ const Simulation = () => {
     };
   }, []);
 
-  // Update markers on maps
+  // Update emergency markers on maps (optimized)
   useEffect(() => {
     if (!callMapRef.current || !reportMapRef.current) return;
 
-    // Clear existing markers
+    // Clear existing emergency markers
     callMarkersRef.current.forEach(m => m.remove());
     reportMarkersRef.current.forEach(m => m.remove());
-    callResponderMarkersRef.current.forEach(m => m.remove());
-    reportResponderMarkersRef.current.forEach(m => m.remove());
-
     callMarkersRef.current = [];
     reportMarkersRef.current = [];
-    callResponderMarkersRef.current = [];
-    reportResponderMarkersRef.current = [];
 
-    // Add emergency markers
-    const emergencyIcon = L.divIcon({
-      className: 'emergency-marker',
-      html: '<div style="background:red;width:10px;height:10px;border-radius:50%;border:2px solid white;"></div>',
-      iconSize: [14, 14]
-    });
+    // Only render recent/active emergencies (limit for performance)
+    const maxMarkersToShow = 500;
+    
+    const recentCallEmergencies = callEmergencies
+      .filter(e => e.status === 'pending' || e.status === 'assigned' || 
+                   (e.status === 'completed' && simTime - e.timestamp < 300))
+      .slice(-maxMarkersToShow);
 
-    const completedIcon = L.divIcon({
-      className: 'completed-marker',
-      html: '<div style="background:green;width:10px;height:10px;border-radius:50%;border:2px solid white;"></div>',
-      iconSize: [14, 14]
-    });
+    const recentReportEmergencies = reportEmergencies
+      .filter(e => e.status === 'pending' || e.status === 'assigned' || 
+                   (e.status === 'completed' && simTime - e.timestamp < 300))
+      .slice(-maxMarkersToShow);
 
-    const responderIcon = L.divIcon({
-      className: 'responder-marker',
-      html: '<div style="background:blue;width:8px;height:8px;border-radius:50%;border:2px solid white;"></div>',
-      iconSize: [12, 12]
-    });
-
-    callEmergencies.forEach(e => {
-      const icon = e.status === 'completed' ? completedIcon : emergencyIcon;
-      const marker = L.marker(e.coordinates, { icon }).addTo(callMapRef.current!);
+    recentCallEmergencies.forEach(e => {
+      const color = e.status === 'completed' ? 'green' : e.status === 'assigned' ? 'orange' : 'red';
+      const marker = L.circleMarker(e.coordinates, {
+        radius: 5,
+        fillColor: color,
+        color: 'white',
+        weight: 2,
+        fillOpacity: 0.8
+      }).addTo(callMapRef.current!);
       callMarkersRef.current.push(marker);
     });
 
-    reportEmergencies.forEach(e => {
-      const icon = e.status === 'completed' ? completedIcon : emergencyIcon;
-      const marker = L.marker(e.coordinates, { icon }).addTo(reportMapRef.current!);
+    recentReportEmergencies.forEach(e => {
+      const color = e.status === 'completed' ? 'green' : e.status === 'assigned' ? 'orange' : 'red';
+      const marker = L.circleMarker(e.coordinates, {
+        radius: 5,
+        fillColor: color,
+        color: 'white',
+        weight: 2,
+        fillOpacity: 0.8
+      }).addTo(reportMapRef.current!);
       reportMarkersRef.current.push(marker);
     });
+  }, [callEmergencies, reportEmergencies, simTime]);
 
-    callResponders.forEach(r => {
-      const marker = L.marker(r.coordinates, { icon: responderIcon }).addTo(callMapRef.current!);
+  // Update responder markers (sampled for performance)
+  useEffect(() => {
+    if (!callMapRef.current || !reportMapRef.current) return;
+    if (callResponders.length === 0) return;
+
+    // Clear existing responder markers
+    callResponderMarkersRef.current.forEach(m => m.remove());
+    reportResponderMarkersRef.current.forEach(m => m.remove());
+    callResponderMarkersRef.current = [];
+    reportResponderMarkersRef.current = [];
+
+    // Sample responders for display (show ~500 of 17,650)
+    const sampleSize = Math.min(500, callResponders.length);
+    const sampleStep = Math.floor(callResponders.length / sampleSize);
+
+    for (let i = 0; i < callResponders.length; i += sampleStep) {
+      const r = callResponders[i];
+      const color = r.busyUntil > simTime ? 'purple' : 'blue';
+      const marker = L.circleMarker(r.coordinates, {
+        radius: 3,
+        fillColor: color,
+        color: 'white',
+        weight: 1,
+        fillOpacity: 0.6
+      }).addTo(callMapRef.current!);
       callResponderMarkersRef.current.push(marker);
-    });
+    }
 
-    reportResponders.forEach(r => {
-      const marker = L.marker(r.coordinates, { icon: responderIcon }).addTo(reportMapRef.current!);
+    for (let i = 0; i < reportResponders.length; i += sampleStep) {
+      const r = reportResponders[i];
+      const color = r.busyUntil > simTime ? 'purple' : 'blue';
+      const marker = L.circleMarker(r.coordinates, {
+        radius: 3,
+        fillColor: color,
+        color: 'white',
+        weight: 1,
+        fillOpacity: 0.6
+      }).addTo(reportMapRef.current!);
       reportResponderMarkersRef.current.push(marker);
-    });
-  }, [callEmergencies, reportEmergencies, callResponders, reportResponders]);
+    }
+
+    // Build spatial grids
+    callResponderGridRef.current = buildSpatialGrid(callResponders);
+    reportResponderGridRef.current = buildSpatialGrid(reportResponders);
+  }, [callResponders, reportResponders, buildSpatialGrid, simTime]);
 
   // Start simulation
   const startSimulation = () => {
     setCurrentTrial(prev => prev + 1);
     setSimTime(0);
+    setLastSelfCompleteCheck(0);
     setCallEmergencies([]);
     setReportEmergencies([]);
-    setCallResponders(initializeResponders());
-    setReportResponders(initializeResponders());
+    const newResponders = initializeResponders();
+    setCallResponders(newResponders);
+    setReportResponders(JSON.parse(JSON.stringify(newResponders))); // Deep copy
     setCallStats({ completed: 0, canceled: 0, selfCompleted: 0, totalTime: 0 });
     setReportStats({ completed: 0, canceled: 0, selfCompleted: 0, totalTime: 0 });
     setCallQueue([]);
-    setReportQueue([]);
-    setCallOperatorsBusy(Array(OPERATORS_COUNT).fill(0));
-    setReportOperatorsBusy(Array(OPERATORS_COUNT).fill(0));
+    setCallOperatorsBusy(Array(CALL_OPERATORS_COUNT).fill(0));
     setIsRunning(true);
     setIsPaused(false);
   };
 
-  // Simulation loop
+  // Main simulation loop - generate emergencies
   useEffect(() => {
     if (!isRunning || isPaused) return;
 
@@ -229,15 +345,14 @@ const Simulation = () => {
       setSimTime(prev => {
         const newTime = prev + 1;
         
-        // Check if simulation is complete (48 hours = 172800 seconds)
+        // Check if simulation is complete
         if (newTime >= SIMULATION_HOURS * 3600) {
           setIsRunning(false);
           
-          // Record results
           const callResult: SimulationResult = {
             trial: currentTrial,
             type: 'Call',
-            avgTimePerEmergency: callStats.totalTime / Math.max(callStats.completed, 1),
+            avgTimePerEmergency: callStats.completed > 0 ? callStats.totalTime / callStats.completed : 0,
             totalTimeSpent: callStats.totalTime,
             selfCompleted: callStats.selfCompleted,
             canceled: callStats.canceled,
@@ -247,7 +362,7 @@ const Simulation = () => {
           const reportResult: SimulationResult = {
             trial: currentTrial,
             type: 'Report',
-            avgTimePerEmergency: reportStats.totalTime / Math.max(reportStats.completed, 1),
+            avgTimePerEmergency: reportStats.completed > 0 ? reportStats.totalTime / reportStats.completed : 0,
             totalTimeSpent: reportStats.totalTime,
             selfCompleted: reportStats.selfCompleted,
             canceled: reportStats.canceled,
@@ -258,20 +373,27 @@ const Simulation = () => {
           return newTime;
         }
 
-        // Generate new emergencies based on hourly rate
-        const callRate = getHourlyCallRate() / 3600; // Per second rate
+        // Generate new emergencies
+        const callRate = getHourlyCallRate() / 3600;
         if (Math.random() < callRate) {
+          const coords = getRandomCoordinates();
+          const emergencyId = newTime * 1000 + Math.floor(Math.random() * 1000);
+          
           const newEmergency: Emergency = {
-            id: Date.now() + Math.random(),
-            coordinates: getRandomCoordinates(),
+            id: emergencyId,
+            coordinates: coords,
             timestamp: newTime,
             status: 'pending',
-            waitTime: 0
+            waitTime: 0,
+            gridCell: getGridCell(coords)
           };
+          
+          // Add to call simulation (goes through operators)
           setCallEmergencies(prev => [...prev, newEmergency]);
-          setReportEmergencies(prev => [...prev, { ...newEmergency, id: newEmergency.id + 0.5 }]);
           setCallQueue(prev => [...prev, newEmergency]);
-          setReportQueue(prev => [...prev, { ...newEmergency, id: newEmergency.id + 0.5 }]);
+          
+          // Add to report simulation (directly visible on map)
+          setReportEmergencies(prev => [...prev, { ...newEmergency, id: emergencyId + 0.5 }]);
         }
 
         return newTime;
@@ -279,55 +401,67 @@ const Simulation = () => {
     }, 1000 / speed);
 
     return () => clearInterval(interval);
-  }, [isRunning, isPaused, speed, currentTrial, callStats, reportStats, getHourlyCallRate, getRandomCoordinates]);
+  }, [isRunning, isPaused, speed, currentTrial, callStats, reportStats, getHourlyCallRate, getRandomCoordinates, getGridCell]);
 
-  // Process queues and check for self-completion
+  // Process queues and handle completions
   useEffect(() => {
     if (!isRunning || isPaused) return;
 
     const processInterval = setInterval(() => {
-      // Process call queue (FIFO)
+      // === CALL SIMULATION ===
+      // Operators process calls (FIFO) and dispatch to nearest responder
       setCallQueue(prev => {
         const newQueue = [...prev];
-        let freeOperators = callOperatorsBusy.filter(t => t <= simTime).length;
+        const freeOperatorIndices = callOperatorsBusy
+          .map((busyUntil, idx) => ({ idx, busyUntil }))
+          .filter(op => op.busyUntil <= simTime)
+          .map(op => op.idx);
         
-        while (newQueue.length > 0 && freeOperators > 0) {
+        let processedCount = 0;
+        const maxToProcess = Math.min(newQueue.length, freeOperatorIndices.length);
+        
+        while (processedCount < maxToProcess) {
           const emergency = newQueue.shift()!;
+          const operatorIdx = freeOperatorIndices[processedCount];
           const processTime = CALL_PROCESS_TIME.min + Math.random() * (CALL_PROCESS_TIME.max - CALL_PROCESS_TIME.min);
           
+          // Mark operator as busy
           setCallOperatorsBusy(ops => {
             const newOps = [...ops];
-            const freeIdx = newOps.findIndex(t => t <= simTime);
-            if (freeIdx !== -1) {
-              newOps[freeIdx] = simTime + processTime;
-            }
+            newOps[operatorIdx] = simTime + processTime;
             return newOps;
           });
 
-          setCallEmergencies(emgs => emgs.map(e => 
-            e.id === emergency.id ? { ...e, status: 'assigned' as const } : e
+          const emergencyId = emergency.id;
+          const emergencyTimestamp = emergency.timestamp;
+          const completionTime = simTime + processTime;
+
+          // Mark as assigned
+          setCallEmergencies(emgs => emgs.map(e =>
+            e.id === emergencyId ? { ...e, status: 'assigned' as const } : e
           ));
 
+          // Complete after processing time
           setTimeout(() => {
             setCallStats(s => ({
               ...s,
               completed: s.completed + 1,
-              totalTime: s.totalTime + (simTime - emergency.timestamp)
+              totalTime: s.totalTime + (completionTime - emergencyTimestamp)
             }));
-            setCallEmergencies(emgs => emgs.map(e => 
-              e.id === emergency.id ? { ...e, status: 'completed' as const } : e
+            setCallEmergencies(emgs => emgs.map(e =>
+              e.id === emergencyId ? { ...e, status: 'completed' as const } : e
             ));
           }, processTime * 1000 / speed);
 
-          freeOperators--;
+          processedCount++;
         }
 
-        // Check for hangups
+        // Check for hangups in remaining queue
         return newQueue.map(e => {
           const waitTime = simTime - e.timestamp;
-          if (waitTime > HANGUP_THRESHOLD && Math.random() < HANGUP_CHANCE) {
+          if (waitTime > HANGUP_THRESHOLD && Math.random() < HANGUP_CHANCE / 60) { // Per-second check
             setCallStats(s => ({ ...s, canceled: s.canceled + 1 }));
-            setCallEmergencies(emgs => emgs.map(em => 
+            setCallEmergencies(emgs => emgs.map(em =>
               em.id === e.id ? { ...em, status: 'canceled' as const } : em
             ));
             return null;
@@ -336,96 +470,104 @@ const Simulation = () => {
         }).filter(Boolean) as Emergency[];
       });
 
-      // Process report queue (random selection)
-      setReportQueue(prev => {
-        if (prev.length === 0) return prev;
-        const newQueue = [...prev];
-        let freeOperators = reportOperatorsBusy.filter(t => t <= simTime).length;
+      // === REPORT SIMULATION ===
+      // Free responders pick closest pending emergency and process it
+      const pendingReports = reportEmergencies.filter(e => e.status === 'pending');
+      const freeResponders = reportResponders.filter(r => r.busyUntil <= simTime);
+      
+      const assignedThisTick = new Set<number>();
+      
+      freeResponders.forEach(responder => {
+        let closestEmergency: Emergency | null = null;
+        let closestDistance = Infinity;
+        
+        for (const emergency of pendingReports) {
+          if (assignedThisTick.has(emergency.id)) continue;
+          const dist = getDistance(responder.coordinates, emergency.coordinates);
+          if (dist < closestDistance && dist <= REPORT_MAX_RANGE) {
+            closestDistance = dist;
+            closestEmergency = emergency;
+          }
+        }
 
-        while (newQueue.length > 0 && freeOperators > 0) {
-          const randomIdx = Math.floor(Math.random() * newQueue.length);
-          const emergency = newQueue.splice(randomIdx, 1)[0];
+        if (closestEmergency) {
+          const emergencyId = closestEmergency.id;
+          const emergencyTimestamp = closestEmergency.timestamp;
           const processTime = REPORT_PROCESS_TIME.min + Math.random() * (REPORT_PROCESS_TIME.max - REPORT_PROCESS_TIME.min);
-
-          setReportOperatorsBusy(ops => {
-            const newOps = [...ops];
-            const freeIdx = newOps.findIndex(t => t <= simTime);
-            if (freeIdx !== -1) {
-              newOps[freeIdx] = simTime + processTime;
-            }
-            return newOps;
-          });
-
-          setReportEmergencies(emgs => emgs.map(e => 
-            e.id === emergency.id ? { ...e, status: 'assigned' as const } : e
+          const completionTime = simTime + processTime;
+          
+          assignedThisTick.add(emergencyId);
+          
+          // Mark responder as busy
+          setReportResponders(rs => rs.map(r =>
+            r.id === responder.id ? { ...r, busyUntil: completionTime } : r
+          ));
+          
+          // Mark emergency as assigned
+          setReportEmergencies(emgs => emgs.map(e =>
+            e.id === emergencyId ? { ...e, status: 'assigned' as const, assignedResponder: responder.id } : e
           ));
 
+          // Complete after processing
           setTimeout(() => {
             setReportStats(s => ({
               ...s,
+              selfCompleted: s.selfCompleted + 1,
               completed: s.completed + 1,
-              totalTime: s.totalTime + (simTime - emergency.timestamp)
+              totalTime: s.totalTime + (completionTime - emergencyTimestamp)
             }));
-            setReportEmergencies(emgs => emgs.map(e => 
-              e.id === emergency.id ? { ...e, status: 'completed' as const } : e
+            setReportEmergencies(emgs => emgs.map(e =>
+              e.id === emergencyId ? { ...e, status: 'completed' as const } : e
             ));
           }, processTime * 1000 / speed);
-
-          freeOperators--;
         }
-
-        return newQueue;
       });
 
-      // Self-completion check for report simulation (higher chance)
-      reportEmergencies.filter(e => e.status === 'pending').forEach(emergency => {
-        reportResponders.forEach(responder => {
-          if (!responder.busy) {
-            const distance = getDistance(emergency.coordinates, responder.coordinates);
-            // Higher chance for report simulation (responders can see the map)
-            const selfCompleteChance = distance < 5 ? 0.05 : distance < 10 ? 0.02 : 0;
-            if (Math.random() < selfCompleteChance) {
-              setReportStats(s => ({
-                ...s,
-                selfCompleted: s.selfCompleted + 1,
-                completed: s.completed + 1,
-                totalTime: s.totalTime + (simTime - emergency.timestamp)
-              }));
-              setReportEmergencies(emgs => emgs.map(e => 
-                e.id === emergency.id ? { ...e, status: 'completed' as const } : e
+      // === CALL SIMULATION - Self-completion (once per minute) ===
+      if (simTime - lastSelfCompleteCheck >= SELF_COMPLETE_CHECK_INTERVAL) {
+        setLastSelfCompleteCheck(simTime);
+        
+        const pendingCallEmergencies = callEmergencies.filter(e => e.status === 'pending');
+        
+        pendingCallEmergencies.forEach(emergency => {
+          const nearbyResponders = findNearbyResponders(
+            emergency,
+            callResponders,
+            callResponderGridRef.current,
+            CALL_SELF_COMPLETE.closeRange,
+            simTime
+          );
+
+          for (const responder of nearbyResponders) {
+            if (Math.random() < CALL_SELF_COMPLETE.closeChance) {
+              const emergencyId = emergency.id;
+              const emergencyTimestamp = emergency.timestamp;
+
+              setCallEmergencies(emgs => emgs.map(e =>
+                e.id === emergencyId ? { ...e, status: 'completed' as const } : e
               ));
-              setReportQueue(q => q.filter(e => e.id !== emergency.id));
-            }
-          }
-        });
-      });
 
-      // Self-completion check for call simulation (lower chance)
-      callEmergencies.filter(e => e.status === 'pending').forEach(emergency => {
-        callResponders.forEach(responder => {
-          if (!responder.busy) {
-            const distance = getDistance(emergency.coordinates, responder.coordinates);
-            // Lower chance for call simulation
-            const selfCompleteChance = distance < 2 ? 0.01 : 0;
-            if (Math.random() < selfCompleteChance) {
+              setCallQueue(q => q.filter(e => e.id !== emergencyId));
+
               setCallStats(s => ({
                 ...s,
                 selfCompleted: s.selfCompleted + 1,
                 completed: s.completed + 1,
-                totalTime: s.totalTime + (simTime - emergency.timestamp)
+                totalTime: s.totalTime + (simTime - emergencyTimestamp)
               }));
-              setCallEmergencies(emgs => emgs.map(e => 
-                e.id === emergency.id ? { ...e, status: 'completed' as const } : e
-              ));
-              setCallQueue(q => q.filter(e => e.id !== emergency.id));
+
+              break;
             }
           }
         });
-      });
+      }
+
     }, 1000 / speed);
 
     return () => clearInterval(processInterval);
-  }, [isRunning, isPaused, speed, simTime, callOperatorsBusy, reportOperatorsBusy, callEmergencies, reportEmergencies, callResponders, reportResponders]);
+  }, [isRunning, isPaused, speed, simTime, lastSelfCompleteCheck, callOperatorsBusy, 
+      callEmergencies, reportEmergencies, callResponders, reportResponders, 
+      findNearbyResponders, getDistance]);
 
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -433,11 +575,19 @@ const Simulation = () => {
     return `${hours}h ${minutes}m`;
   };
 
+  const getFreeOperators = () => callOperatorsBusy.filter(t => t <= simTime).length;
+  const getBusyResponders = (responders: FirstResponder[]) => responders.filter(r => r.busyUntil > simTime).length;
+
   return (
     <div className="simulation-container">
       <div className="simulation-controls">
         <h2>Hurricane Harvey Simulation</h2>
         <p>Comparing Emergency Calls vs Emergency Reports</p>
+        
+        <div className="simulation-info" style={{ fontSize: '12px', color: '#666', marginBottom: '15px' }}>
+          <p><strong>Call System:</strong> {CALL_OPERATORS_COUNT.toLocaleString()} operators process calls → dispatch to {RESPONDERS_COUNT.toLocaleString()} responders</p>
+          <p><strong>Report System:</strong> {RESPONDERS_COUNT.toLocaleString()} responders read reports directly from map</p>
+        </div>
         
         <div className="control-row">
           <button 
@@ -478,19 +628,25 @@ const Simulation = () => {
           <h3>Emergency Call Simulation</h3>
           <div className="stats-bar">
             <span>Queue: {callQueue.length}</span>
+            <span>Free Operators: {getFreeOperators()}/{CALL_OPERATORS_COUNT}</span>
+          </div>
+          <div className="stats-bar">
             <span>Completed: {callStats.completed}</span>
             <span>Canceled: {callStats.canceled}</span>
             <span>Self-Completed: {callStats.selfCompleted}</span>
           </div>
-          <div style={{ display: 'flex', gap: '20px', padding: '8px 15px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', fontSize: '13px' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'red', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}></span> Pending Emergency
+          <div style={{ display: 'flex', gap: '15px', padding: '8px 15px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', fontSize: '12px', flexWrap: 'wrap' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'red' }}></span> Pending
             </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'green', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}></span> Completed Emergency
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'orange' }}></span> Assigned
             </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'blue', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}></span> First Responder
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'green' }}></span> Completed
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'blue' }}></span> Responder
             </span>
           </div>
           <div id="call-map" style={{ width: '100%', height: '300px' }}></div>
@@ -499,20 +655,28 @@ const Simulation = () => {
         <div className="map-section">
           <h3>Emergency Report Simulation</h3>
           <div className="stats-bar">
-            <span>Queue: {reportQueue.length}</span>
-            <span>Completed: {reportStats.completed}</span>
-            <span>Canceled: {reportStats.canceled}</span>
-            <span>Self-Completed: {reportStats.selfCompleted}</span>
+            <span>Pending: {reportEmergencies.filter(e => e.status === 'pending').length}</span>
+            <span>Free Responders: {RESPONDERS_COUNT - getBusyResponders(reportResponders)}/{RESPONDERS_COUNT.toLocaleString()}</span>
           </div>
-          <div style={{ display: 'flex', gap: '20px', padding: '8px 15px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', fontSize: '13px' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'red', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}></span> Pending Emergency
+          <div className="stats-bar">
+            <span>Completed: {reportStats.completed}</span>
+            <span>(All Self-Completed)</span>
+          </div>
+          <div style={{ display: 'flex', gap: '15px', padding: '8px 15px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', fontSize: '12px', flexWrap: 'wrap' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'red' }}></span> Pending
             </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'green', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}></span> Completed Emergency
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'orange' }}></span> Assigned
             </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'blue', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}></span> First Responder
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'green' }}></span> Completed
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'blue' }}></span> Free Responder
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'purple' }}></span> Busy Responder
             </span>
           </div>
           <div id="report-map" style={{ width: '100%', height: '300px' }}></div>
@@ -540,9 +704,9 @@ const Simulation = () => {
                 <td>{result.type}</td>
                 <td>{formatTime(result.avgTimePerEmergency)}</td>
                 <td>{formatTime(result.totalTimeSpent)}</td>
-                <td>{result.selfCompleted}</td>
-                <td>{result.canceled}</td>
-                <td>{result.totalCompleted}</td>
+                <td>{result.selfCompleted.toLocaleString()}</td>
+                <td>{result.canceled.toLocaleString()}</td>
+                <td>{result.totalCompleted.toLocaleString()}</td>
               </tr>
             ))}
             {results.length === 0 && (
