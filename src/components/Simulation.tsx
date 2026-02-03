@@ -23,6 +23,7 @@ type SimulationResult = {
   trial: number;
   type: 'Report' | 'Call';
   avgTimePerEmergency: number;
+  avgProcessTime: number;
   totalTimeSpent: number;
   selfCompleted: number;
   canceled: number;
@@ -78,14 +79,35 @@ const Simulation = () => {
   const [reportEmergencies, setReportEmergencies] = useState<Emergency[]>([]);
   const [callResponders, setCallResponders] = useState<FirstResponder[]>([]);
   const [reportResponders, setReportResponders] = useState<FirstResponder[]>([]);
-  const [callStats, setCallStats] = useState({ completed: 0, canceled: 0, selfCompleted: 0, totalTime: 0 });
-  const [reportStats, setReportStats] = useState({ completed: 0, canceled: 0, selfCompleted: 0, totalTime: 0 });
+  const [callStats, setCallStats] = useState({ completed: 0, canceled: 0, selfCompleted: 0, totalTime: 0, totalProcessTime: 0 });
+  const [reportStats, setReportStats] = useState({ completed: 0, canceled: 0, selfCompleted: 0, totalTime: 0, totalProcessTime: 0 });
   const [callQueue, setCallQueue] = useState<Emergency[]>([]);
   const [callOperatorsBusy, setCallOperatorsBusy] = useState<number[]>(Array(CALL_OPERATORS_COUNT).fill(0));
 
   // Spatial grids for efficient lookups
   const callResponderGridRef = useRef<SpatialGrid>(new Map());
   const reportResponderGridRef = useRef<SpatialGrid>(new Map());
+
+  // Emergency rate for current trial (calculated once per trial)
+  const emergencyRateRef = useRef<number>(0);
+  
+  // Track simulation time with a ref for accurate emergency generation
+  const simTimeRef = useRef<number>(0);
+  
+  // Track if an interval tick is currently being processed
+  const isProcessingRef = useRef<boolean>(false);
+  
+  // Track speed for setTimeout callbacks
+  const speedRef = useRef<number>(100);
+  
+  // Track completed emergency IDs to prevent duplicate stats
+  const completedCallIdsRef = useRef<Set<number>>(new Set());
+  const completedReportIdsRef = useRef<Set<number>>(new Set());
+  
+  // Update speedRef when speed changes
+  useEffect(() => {
+    speedRef.current = speed;
+  }, [speed]);
 
   // Map refs
   const callMapRef = useRef<L.Map | null>(null);
@@ -125,15 +147,6 @@ const Simulation = () => {
       grid.get(cell)!.push(r.id);
     });
     return grid;
-  }, []);
-
-  // Calculate hourly call rate with randomness
-  const getHourlyCallRate = useCallback(() => {
-    const additionalCalls = Math.floor(Math.random() * 10000) + 5000;
-    const totalCalls = BASE_CALLS + additionalCalls;
-    const baseRate = totalCalls / SIMULATION_HOURS;
-    const variance = additionalCalls / SIMULATION_HOURS;
-    return baseRate + (Math.random() * variance * 2 - variance);
   }, []);
 
   // Generate random coordinates within Houston bounds
@@ -329,10 +342,20 @@ const Simulation = () => {
     const newResponders = initializeResponders();
     setCallResponders(newResponders);
     setReportResponders(JSON.parse(JSON.stringify(newResponders))); // Deep copy
-    setCallStats({ completed: 0, canceled: 0, selfCompleted: 0, totalTime: 0 });
-    setReportStats({ completed: 0, canceled: 0, selfCompleted: 0, totalTime: 0 });
+    setCallStats({ completed: 0, canceled: 0, selfCompleted: 0, totalTime: 0, totalProcessTime: 0 });
+    setReportStats({ completed: 0, canceled: 0, selfCompleted: 0, totalTime: 0, totalProcessTime: 0 });
     setCallQueue([]);
     setCallOperatorsBusy(Array(CALL_OPERATORS_COUNT).fill(0));
+    
+    // Calculate emergency rate once per trial (per the paper: 75,000 + random 5,000-15,000 over 48 hours)
+    const additionalCalls = Math.floor(Math.random() * 10000) + 5000;
+    const totalCalls = BASE_CALLS + additionalCalls;
+    // Rate per simulation second
+    emergencyRateRef.current = totalCalls / (SIMULATION_HOURS * 3600);
+    simTimeRef.current = 0;
+    completedCallIdsRef.current = new Set();
+    completedReportIdsRef.current = new Set();
+    
     setIsRunning(true);
     setIsPaused(false);
   };
@@ -342,66 +365,84 @@ const Simulation = () => {
     if (!isRunning || isPaused) return;
 
     const interval = setInterval(() => {
-      setSimTime(prev => {
-        const newTime = prev + 1;
+      // Prevent overlapping interval executions
+      if (isProcessingRef.current) return;
+      isProcessingRef.current = true;
+      
+      // Use ref to track time and prevent duplicate processing
+      const newTime = simTimeRef.current + 1;
+      simTimeRef.current = newTime;
+      
+      // Update React state for UI
+      setSimTime(newTime);
+      
+      // Check if simulation is complete
+      if (newTime >= SIMULATION_HOURS * 3600) {
+        setIsRunning(false);
+        isProcessingRef.current = false;
+        return;
+      }
+
+      // Generate new emergencies using the fixed rate for this trial
+      if (Math.random() < emergencyRateRef.current) {
+        const coords = getRandomCoordinates();
+        const emergencyId = newTime * 1000 + Math.floor(Math.random() * 1000);
         
-        // Check if simulation is complete
-        if (newTime >= SIMULATION_HOURS * 3600) {
-          setIsRunning(false);
-          
-          const callResult: SimulationResult = {
-            trial: currentTrial,
-            type: 'Call',
-            avgTimePerEmergency: callStats.completed > 0 ? callStats.totalTime / callStats.completed : 0,
-            totalTimeSpent: callStats.totalTime,
-            selfCompleted: callStats.selfCompleted,
-            canceled: callStats.canceled,
-            totalCompleted: callStats.completed
-          };
-          
-          const reportResult: SimulationResult = {
-            trial: currentTrial,
-            type: 'Report',
-            avgTimePerEmergency: reportStats.completed > 0 ? reportStats.totalTime / reportStats.completed : 0,
-            totalTimeSpent: reportStats.totalTime,
-            selfCompleted: reportStats.selfCompleted,
-            canceled: reportStats.canceled,
-            totalCompleted: reportStats.completed
-          };
-          
-          setResults(prev => [...prev, reportResult, callResult]);
-          return newTime;
-        }
-
-        // Generate new emergencies
-        const callRate = getHourlyCallRate() / 3600;
-        if (Math.random() < callRate) {
-          const coords = getRandomCoordinates();
-          const emergencyId = newTime * 1000 + Math.floor(Math.random() * 1000);
-          
-          const newEmergency: Emergency = {
-            id: emergencyId,
-            coordinates: coords,
-            timestamp: newTime,
-            status: 'pending',
-            waitTime: 0,
-            gridCell: getGridCell(coords)
-          };
-          
-          // Add to call simulation (goes through operators)
-          setCallEmergencies(prev => [...prev, newEmergency]);
-          setCallQueue(prev => [...prev, newEmergency]);
-          
-          // Add to report simulation (directly visible on map)
-          setReportEmergencies(prev => [...prev, { ...newEmergency, id: emergencyId + 0.5 }]);
-        }
-
-        return newTime;
-      });
+        const newEmergency: Emergency = {
+          id: emergencyId,
+          coordinates: coords,
+          timestamp: newTime,
+          status: 'pending',
+          waitTime: 0,
+          gridCell: getGridCell(coords)
+        };
+        
+        // Add to call simulation (goes through operators)
+        setCallEmergencies(prev => [...prev, newEmergency]);
+        setCallQueue(prev => [...prev, newEmergency]);
+        
+        // Add to report simulation (directly visible on map)
+        setReportEmergencies(prev => [...prev, { ...newEmergency, id: emergencyId + 0.5 }]);
+      }
+      
+      isProcessingRef.current = false;
     }, 1000 / speed);
 
     return () => clearInterval(interval);
-  }, [isRunning, isPaused, speed, currentTrial, callStats, reportStats, getHourlyCallRate, getRandomCoordinates, getGridCell]);
+  }, [isRunning, isPaused, speed, getRandomCoordinates, getGridCell]);
+
+  // Capture final results when simulation ends
+  useEffect(() => {
+    if (simTime >= SIMULATION_HOURS * 3600 && currentTrial > 0 && !isRunning) {
+      // Check if we already have results for this trial
+      const hasResults = results.some(r => r.trial === currentTrial);
+      if (hasResults) return;
+
+      const callResult: SimulationResult = {
+        trial: currentTrial,
+        type: 'Call',
+        avgTimePerEmergency: callStats.completed > 0 ? callStats.totalTime / callStats.completed : 0,
+        avgProcessTime: callStats.completed > 0 ? callStats.totalProcessTime / callStats.completed : 0,
+        totalTimeSpent: callStats.totalTime,
+        selfCompleted: callStats.selfCompleted,
+        canceled: callStats.canceled,
+        totalCompleted: callStats.completed
+      };
+      
+      const reportResult: SimulationResult = {
+        trial: currentTrial,
+        type: 'Report',
+        avgTimePerEmergency: reportStats.completed > 0 ? reportStats.totalTime / reportStats.completed : 0,
+        avgProcessTime: reportStats.completed > 0 ? reportStats.totalProcessTime / reportStats.completed : 0,
+        totalTimeSpent: reportStats.totalTime,
+        selfCompleted: reportStats.selfCompleted,
+        canceled: reportStats.canceled,
+        totalCompleted: reportStats.completed
+      };
+      
+      setResults(prev => [...prev, reportResult, callResult]);
+    }
+  }, [simTime, currentTrial, isRunning, callStats, reportStats, results]);
 
   // Process queues and handle completions
   useEffect(() => {
@@ -441,17 +482,23 @@ const Simulation = () => {
             e.id === emergencyId ? { ...e, status: 'assigned' as const } : e
           ));
 
-          // Complete after processing time
+          // Complete after processing time - use speedRef for current speed
+          const currentSpeed = speedRef.current;
           setTimeout(() => {
+            // Guard against duplicate completion using ref
+            if (completedCallIdsRef.current.has(emergencyId)) return;
+            completedCallIdsRef.current.add(emergencyId);
+            
             setCallStats(s => ({
               ...s,
               completed: s.completed + 1,
-              totalTime: s.totalTime + (completionTime - emergencyTimestamp)
+              totalTime: s.totalTime + (completionTime - emergencyTimestamp),
+              totalProcessTime: s.totalProcessTime + processTime
             }));
             setCallEmergencies(emgs => emgs.map(e =>
               e.id === emergencyId ? { ...e, status: 'completed' as const } : e
             ));
-          }, processTime * 1000 / speed);
+          }, processTime * 1000 / currentSpeed);
 
           processedCount++;
         }
@@ -508,18 +555,24 @@ const Simulation = () => {
             e.id === emergencyId ? { ...e, status: 'assigned' as const, assignedResponder: responder.id } : e
           ));
 
-          // Complete after processing
+          // Complete after processing - use speedRef for current speed
+          const currentSpeed = speedRef.current;
           setTimeout(() => {
+            // Guard against duplicate completion using ref
+            if (completedReportIdsRef.current.has(emergencyId)) return;
+            completedReportIdsRef.current.add(emergencyId);
+            
             setReportStats(s => ({
               ...s,
               selfCompleted: s.selfCompleted + 1,
               completed: s.completed + 1,
-              totalTime: s.totalTime + (completionTime - emergencyTimestamp)
+              totalTime: s.totalTime + (completionTime - emergencyTimestamp),
+              totalProcessTime: s.totalProcessTime + processTime
             }));
             setReportEmergencies(emgs => emgs.map(e =>
               e.id === emergencyId ? { ...e, status: 'completed' as const } : e
             ));
-          }, processTime * 1000 / speed);
+          }, processTime * 1000 / currentSpeed);
         }
       });
 
@@ -627,6 +680,7 @@ const Simulation = () => {
         <div className="map-section">
           <h3>Emergency Call Simulation</h3>
           <div className="stats-bar">
+            <span>Total Emergencies: {callEmergencies.length}</span>
             <span>Queue: {callQueue.length}</span>
             <span>Free Operators: {getFreeOperators()}/{CALL_OPERATORS_COUNT}</span>
           </div>
@@ -655,6 +709,7 @@ const Simulation = () => {
         <div className="map-section">
           <h3>Emergency Report Simulation</h3>
           <div className="stats-bar">
+            <span>Total Emergencies: {reportEmergencies.length}</span>
             <span>Pending: {reportEmergencies.filter(e => e.status === 'pending').length}</span>
             <span>Free Responders: {RESPONDERS_COUNT - getBusyResponders(reportResponders)}/{RESPONDERS_COUNT.toLocaleString()}</span>
           </div>
@@ -691,6 +746,7 @@ const Simulation = () => {
               <th>Trial #</th>
               <th>Simulation Type</th>
               <th>Avg Time/Emergency</th>
+              <th>Avg Process Time</th>
               <th>Total Time Spent</th>
               <th>Self Completed</th>
               <th>Canceled</th>
@@ -703,6 +759,7 @@ const Simulation = () => {
                 <td>{result.trial}</td>
                 <td>{result.type}</td>
                 <td>{formatTime(result.avgTimePerEmergency)}</td>
+                <td>{formatTime(result.avgProcessTime)}</td>
                 <td>{formatTime(result.totalTimeSpent)}</td>
                 <td>{result.selfCompleted.toLocaleString()}</td>
                 <td>{result.canceled.toLocaleString()}</td>
@@ -711,7 +768,7 @@ const Simulation = () => {
             ))}
             {results.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center' }}>No results yet. Start a simulation!</td>
+                <td colSpan={8} style={{ textAlign: 'center' }}>No results yet. Start a simulation!</td>
               </tr>
             )}
           </tbody>

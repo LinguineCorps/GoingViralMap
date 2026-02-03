@@ -1,0 +1,107 @@
+﻿Experiment
+This is an experimental study that utilizes a computer simulation designed to recreate a natural disaster with thousands of calls, and compares the current system of emergency calling to the emergency report system. For this experiment, it will simulate Hurricane Harvey. Once the simulation is ran multiple times, the results will be recorded and analyzed to see which system is more effective.
+The first step in creating the simulation will be to get estimates of how long the emergency calls should be and how long it should take operators to process an emergency report. In order to get a time estimate for the emergency calls, this experiment will use already existing data on 911 calls,  a range, so that all the times aren’t the same, simulating real randomness. For the emergency reports, an estimate of 30 - 90 seconds per report will be used.
+The simulation won’t just be numbers; there will also be visuals. Instead of only one map like on the web app, there will be two maps side by side, each displaying the simulation for both the emergency call simulation and the emergency report simulation. Because there will be visuals, the simulation will take real time. This means that since it is simulating Hurricane Harvey, it would take days of real time to finish the simulation, regardless of whether the computer could process it faster. Because of this, there will be a slider that controls the speed of the simulation. The only thing it changes is visually how long the simulation is, not the results. 
+The visuals themselves can be compared to already existing crisis maps. First, each map will be interactive, where you can drag and zoom, just like any other map software. On the maps, there will be pins in random locations, representing first responders. Throughout the simulation, Emergencies will pop up in random locations at intervals similar to Hurricane Harvey.
+ CBS News stated that call centers around Houston received 75,000 calls from Friday night to Monday morning (CBS News, 2017), which is roughly 48 hours if Friday night is considered 12 am and Monday morning is also considered 12 am. Even though CBS news didn’t specify this, and it's highly unlikely for this to be true, if we were to account for the few hour differences between Friday night being 12 am to the actual Friday night, and Monday morning being 12 am to the actual Monday morning, they would most likely cancel each other out, so 48 hours is still a good estimate.  gives us 1562 calls per hour if rounded down to a pretty number. However, this estimate presents an issue. The 75,000 calls stated previously only account for the calls that went through and were processed by 911, not including calls that never made it through and people who hung up. CBS News stated that there were thousands of calls that never made it to the front of the call line (CBS News, 2017). So, in order for the simulation to more accurately represent Hurricane Harvey, it needs to include both the number of calls that were processed and the number of calls that never made it through due to people hanging up or other reasons. However, this presents an issue: there's no data on the number of calls that never made it through to 911. This means the added number of calls in the simulation will have to be an estimate. To simulate randomness, each time the simulation is run, it will have a random number of calls added within a range of 5,000 - 15,000 on top of the 75,000 processed calls. Since the midrange of possible calls becomes 85,000 with the added unprocessed calls, the calculations  and  (both are rounded) give us an hourly call rate of  with x being random.
+Emergency distance will also be a factor in the simulation. Inherently, if a first responder is close to an emergency, they won't need an operator to tell them where to go. So in the simulation, there will be a chance every minute that the first responder will automatically respond to an emergency, depending on the distance. The range and the percent chance will be much higher for the emergency report simulation compared to the emergency call simulation. One of the benefits of a crisis map that anyone can view is that this includes first responders as well. This means they can respond to emergencies they see on the map without needing an operator to inform them. However, with traditional emergency calling, there is a low chance of an operator knowing about an emergency far away. Natural disasters are unpredictable, and there could be many things blocking the line of sight for first responders.
+In both simulations, there will be the same number of operators with no difference between the two except for the amount of time it takes to process an emergency call or report. How it will work is like this: the operators will select reports from random. Then they will take time to process them and then send it to the best first responder for the situation. If there are more reports than the operators can handle, a queue will build up. For the emergency call simulation, things will work a bit differently: unlike with the emergency report simulation, the operators will answer calls based on the order of the calls. The people who called first will be at the front of the call line. Once there are more calls than the operators can handle, a queue will build up. Once enough time has passed, there will be a chance for people who waited too long to hang up on 911. This won’t do anything in the simulation other than shorten the queue, but it will reflect negatively at the end when the results are recorded. However, reports won’t expire in the emergency report simulation.
+Once the simulations are run a few times, the results will be displayed on a table like the following:
+
+
+Trial #
+	Simulation type
+	Average time per emergency
+	Total time spent
+	Emergencies self completed
+	Emergencies canceled
+	Total emergencies completed
+	1
+	Report
+	
+
+	
+
+	
+
+	
+
+	
+
+	Call
+	
+
+	
+
+	
+
+	
+
+	
+
+	2
+	Report
+	
+
+	
+
+	
+
+	
+
+	
+
+	Call
+	
+
+	
+
+	
+
+	
+
+	
+
+	3
+	Report
+	
+
+	
+
+	
+
+	
+
+	
+
+	Call
+	
+
+	
+
+	
+
+	
+
+	
+
+	________________
+
+
+
+
+
+
+References
+Bloch, H. (2016, October 2). When Disaster Strikes, He Creates A 'Crisis Map' That Helps Save Lives. NPR. Retrieved September 2, 2025, from https://www.npr.org/sections/parallels/2016/10/02/495795717/when-disaster-strikes-he-creates-a-crisis-map-that-helps-save-lives
+CBS News. (2017, August 29). Houston emergency officials tell 911 callers not to hang up. CBS News. Retrieved August 22, 2025, from https://www.cbsnews.com/news/houston-flooding-911-calls-after-harvey/
+DesRoches, R., Comerio, M., Eberhard, M., Mooney, W., & Rix, G. J. (2011, January 23). Overview of the 2010 Haiti Earthquake. Earthquake Science Center. Retrieved August 29, 2025, from https://escweb.wr.usgs.gov/share/mooney/142.pdf
+EMERGENCIES 911 ABROAD. (n.d.). U.S. DEPARTMENT of STATE — BUREAU of CONSULAR AFFAIRS. Retrieved August 20, 2025, from https://travel.state.gov/content/dam/students-abroad/pdfs/911_ABROAD.pdf
+Lee, C. (2017, December 11). How social media assisted cops with the Hurricane Harvey response. Police1. Retrieved August 26, 2025, from https://www.police1.com/police-products/emergency-preparedness/articles/how-social-media-assisted-cops-with-the-hurricane-harvey-response-9OwqBm9k0ygUBCyN/
+Meier, P. (2015). Digital Humanitarians: How Big Data Is Changing the Face of Humanitarian Response. Taylor & Francis.
+NWS Lake Charles staff. (2017). Hurricane Harvey 2017. National Weather Service. Retrieved August 22, 2025, from https://www.weather.gov/lch/2017harvey
+Perimeter Staff. (2024, April 19). 11 Best Emergency Mapping Software Solutions for 2024. Perimeter Platform. Retrieved September 2, 2025, from https://perimeterplatform.com/blog/emergency-mapping-software
+Ragovin, H. (2015, June 25). Navigating Disaster. TuftsNow. Retrieved September 2, 2025, from https://now.tufts.edu/2015/06/25/navigating-disaster
+Silverman, L. (2017, August 28). Houston Residents Turn To Social Media For Hurricane Harvey Relief : All Tech Considered. NPR. Retrieved August 25, 2025, from https://www.npr.org/sections/alltechconsidered/2017/08/28/546831780/texas-police-and-residents-turn-to-social-media-to-communicate-amid-harvey
+U.S. Government Accountability Office. (2020, September 10). Natural Disasters: Economic Effects of Hurricanes Katrina, Sandy, Harvey, and Irma. GAO. Retrieved August 25, 2025, from https://www.gao.gov/products/gao-20-633r
+World Bank Group. (2023). Haiti Overview: Development news, research, data. World Bank. Retrieved August 29, 2025, from https://www.worldbank.org/en/country/haiti/overview
