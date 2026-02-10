@@ -580,9 +580,13 @@ const Simulation = () => {
       if (simTime - lastSelfCompleteCheck >= SELF_COMPLETE_CHECK_INTERVAL) {
         setLastSelfCompleteCheck(simTime);
         
+        // Only check pending emergencies (not ones already assigned to operators)
         const pendingCallEmergencies = callEmergencies.filter(e => e.status === 'pending');
         
         pendingCallEmergencies.forEach(emergency => {
+          // Skip if already completed
+          if (completedCallIdsRef.current.has(emergency.id)) return;
+          
           const nearbyResponders = findNearbyResponders(
             emergency,
             callResponders,
@@ -591,9 +595,14 @@ const Simulation = () => {
             simTime
           );
 
-          for (const responder of nearbyResponders) {
+          for (const _responder of nearbyResponders) {
             if (Math.random() < CALL_SELF_COMPLETE.closeChance) {
               const emergencyId = emergency.id;
+              
+              // Guard against duplicate completion
+              if (completedCallIdsRef.current.has(emergencyId)) break;
+              completedCallIdsRef.current.add(emergencyId);
+              
               const emergencyTimestamp = emergency.timestamp;
 
               setCallEmergencies(emgs => emgs.map(e =>
@@ -626,6 +635,10 @@ const Simulation = () => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     return `${hours}h ${minutes}m`;
+  };
+
+  const formatSeconds = (seconds: number) => {
+    return `${Math.round(seconds)}s`;
   };
 
   const getFreeOperators = () => callOperatorsBusy.filter(t => t <= simTime).length;
@@ -758,8 +771,8 @@ const Simulation = () => {
               <tr key={idx} className={result.type.toLowerCase()}>
                 <td>{result.trial}</td>
                 <td>{result.type}</td>
-                <td>{formatTime(result.avgTimePerEmergency)}</td>
-                <td>{formatTime(result.avgProcessTime)}</td>
+                <td>{formatSeconds(result.avgTimePerEmergency)}</td>
+                <td>{formatSeconds(result.avgProcessTime)}</td>
                 <td>{formatTime(result.totalTimeSpent)}</td>
                 <td>{result.selfCompleted.toLocaleString()}</td>
                 <td>{result.canceled.toLocaleString()}</td>
